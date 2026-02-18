@@ -20,3 +20,15 @@ def parse_text(text: str, chars_per_page: int = 1500) -> list[str]:
         pages.append(' '.join(current))
 
     return pages
+
+
+def parse_pdf(file_bytes: bytes) -> list[str]:
+    """Extract text from PDF bytes. Returns one string per non-blank PDF page."""
+    doc = fitz.open(stream=file_bytes, filetype="pdf")
+    pages = []
+    for page in doc:
+        text = page.get_text().strip()
+        if text:
+            pages.append(text)
+    doc.close()
+    return pages

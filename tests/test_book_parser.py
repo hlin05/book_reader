@@ -1,6 +1,7 @@
 # tests/test_book_parser.py
 import pytest
-from book_parser import parse_text
+import fitz
+from book_parser import parse_text, parse_pdf
 
 
 def test_parse_text_short_text_is_single_page():
@@ -29,3 +30,35 @@ def test_parse_text_splits_at_sentence_boundaries():
     pages = parse_text(text, chars_per_page=20)
     for page in pages:
         assert page.strip()[-1] in '.!?'
+
+
+# --- PDF parsing ---
+
+def _make_pdf(pages: list[str]) -> bytes:
+    """Helper: create minimal in-memory PDF with given pages."""
+    doc = fitz.open()
+    for text in pages:
+        page = doc.new_page()
+        if text.strip():
+            page.insert_text((50, 50), text)
+    buf = doc.tobytes()
+    doc.close()
+    return buf
+
+
+def test_parse_pdf_one_page_per_pdf_page():
+    pdf = _make_pdf(["Page one content.", "Page two content."])
+    pages = parse_pdf(pdf)
+    assert len(pages) == 2
+
+
+def test_parse_pdf_preserves_text():
+    pdf = _make_pdf(["Hello from page one."])
+    pages = parse_pdf(pdf)
+    assert "Hello from page one" in pages[0]
+
+
+def test_parse_pdf_skips_blank_pages():
+    pdf = _make_pdf(["Content.", "", "More content."])
+    pages = parse_pdf(pdf)
+    assert len(pages) == 2  # blank page skipped
