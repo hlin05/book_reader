@@ -37,7 +37,11 @@ def parse_pdf(file_bytes: bytes) -> list[str]:
 def fetch_github_files(repo_url: str, token: str | None = None) -> list[dict]:
     """List .md and .txt files in a GitHub repo. Returns [{name, raw_url}]."""
     parts = repo_url.rstrip('/').split('/')
+    if len(parts) < 5 or 'github.com' not in parts:
+        raise ValueError(f"Not a valid GitHub repo URL: {repo_url!r}")
     owner, repo = parts[-2], parts[-1]
+    if not owner or not repo:
+        raise ValueError(f"Could not extract owner/repo from URL: {repo_url!r}")
 
     headers = {'Accept': 'application/vnd.github.v3+json'}
     if token:

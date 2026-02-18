@@ -14,6 +14,7 @@ def _init():
         'prefetch_thread': None,
         'prefetch_idx': None,
         'gh_files': [],
+        '_book_id': 0,
     }
     for k, v in defaults.items():
         st.session_state.setdefault(k, v)
@@ -21,6 +22,8 @@ def _init():
 
 def _load_book(pages: list[str]):
     """Reset all state and load a new book."""
+    # Increment _book_id first so any in-flight prefetch thread discards its result
+    st.session_state['_book_id'] = st.session_state.get('_book_id', 0) + 1
     for idx in list(st.session_state.audio_cache.keys()):
         cleanup(idx)
     st.session_state.pages = pages
@@ -109,11 +112,12 @@ def _player():
     col1, col2, col3 = st.columns([1, 6, 1])
     with col1:
         if idx > 0 and st.button("◀ Prev", key="prev_btn"):
+            cleanup(idx)  # page just played; going back means we're done with it
             st.session_state.current_page -= 1
             st.rerun()
     with col3:
         if idx + 1 < total and st.button("Next ▶", key="next_btn"):
-            cleanup(idx - 1)  # delete the page before current
+            cleanup(idx)  # page just finished playing
             st.session_state.current_page += 1
             st.rerun()
 

@@ -9,6 +9,7 @@ def _init_state():
     st.session_state.setdefault('audio_cache', {})
     st.session_state.setdefault('prefetch_thread', None)
     st.session_state.setdefault('prefetch_idx', None)
+    st.session_state.setdefault('_book_id', 0)
 
 
 def get_audio(page_idx: int) -> bytes | None:
@@ -49,12 +50,20 @@ def prefetch(page_idx: int, pages: list[str]) -> None:
         if t and t.is_alive():
             return
 
+    # Resolve api_key and book_id in the main thread — st.secrets is not safe from threads
+    api_key = st.secrets.get("OPENAI_API_KEY", None)
+    book_id = st.session_state['_book_id']
+
     def _worker():
-        audio_bytes = tts.generate_audio(pages[page_idx])
+        audio_bytes = tts.generate_audio(pages[page_idx], api_key=api_key)
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
         tmp.write(audio_bytes)
         tmp.close()
-        st.session_state['audio_cache'][page_idx] = tmp.name
+        # Only commit if the book hasn't been reloaded since this thread started
+        if st.session_state.get('_book_id') == book_id:
+            st.session_state['audio_cache'][page_idx] = tmp.name
+        else:
+            os.unlink(tmp.name)
 
     t = threading.Thread(target=_worker, daemon=True)
     st.session_state['prefetch_thread'] = t
