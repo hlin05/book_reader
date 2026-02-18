@@ -32,3 +32,42 @@ def parse_pdf(file_bytes: bytes) -> list[str]:
             pages.append(text)
     doc.close()
     return pages
+
+
+def fetch_github_files(repo_url: str, token: str | None = None) -> list[dict]:
+    """List .md and .txt files in a GitHub repo. Returns [{name, raw_url}]."""
+    parts = repo_url.rstrip('/').split('/')
+    owner, repo = parts[-2], parts[-1]
+
+    headers = {'Accept': 'application/vnd.github.v3+json'}
+    if token:
+        headers['Authorization'] = f'token {token}'
+
+    resp = requests.get(f'https://api.github.com/repos/{owner}/{repo}', headers=headers)
+    resp.raise_for_status()
+    default_branch = resp.json()['default_branch']
+
+    resp = requests.get(
+        f'https://api.github.com/repos/{owner}/{repo}/git/trees/{default_branch}?recursive=1',
+        headers=headers,
+    )
+    resp.raise_for_status()
+
+    files = []
+    for item in resp.json().get('tree', []):
+        if item['type'] == 'blob' and item['path'].endswith(('.md', '.txt')):
+            raw_url = (
+                f'https://raw.githubusercontent.com/{owner}/{repo}/{default_branch}/{item["path"]}'
+            )
+            files.append({'name': item['path'], 'raw_url': raw_url})
+    return files
+
+
+def fetch_github_file(raw_url: str, token: str | None = None) -> str:
+    """Fetch raw text content of a file from GitHub."""
+    headers = {}
+    if token:
+        headers['Authorization'] = f'token {token}'
+    resp = requests.get(raw_url, headers=headers)
+    resp.raise_for_status()
+    return resp.text
