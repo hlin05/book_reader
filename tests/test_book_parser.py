@@ -114,18 +114,23 @@ def test_fetch_github_file_returns_text(mocker):
 
 
 def test_parse_text_word_cap_splits_long_page():
-    # 50 sentences × ~13 words = ~650 words — exceeds 50-word cap used here
+    # 50 sentences × 13 words = 650 words — exceeds 50-word cap
     sentence = "The quick brown fox jumps over the lazy dog and runs away fast. "
     text = sentence * 50
     pages = parse_text(text, words_per_page=50)
+    assert len(pages) > 1, "Long text should be split into multiple pages"
     word_counts = [len(p.split()) for p in pages]
+    # With 13-word sentences and a 50-word cap, pages flush after ≤3 sentences (39 words)
     assert all(wc <= 50 for wc in word_counts)
+    assert max(word_counts) >= 13, "Pages should contain at least one sentence"
 
 
 def test_parse_text_word_cap_custom_limit():
+    # 30 sentences × ~10 words = ~300 words — exceeds 50-word cap
     sentence = "Hello world this is a test sentence with many words. "
-    text = sentence * 30  # 30 × ~10 words = ~300 words
+    text = sentence * 30
     pages = parse_text(text, words_per_page=50)
+    assert len(pages) > 1, "Text with 300 words should split under a 50-word cap"
     word_counts = [len(p.split()) for p in pages]
     assert all(wc <= 50 for wc in word_counts)
 
