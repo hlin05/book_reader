@@ -1,3 +1,4 @@
+import time
 import streamlit as st
 from book_parser import parse_text, parse_pdf, fetch_github_files, fetch_github_file
 from audio_manager import ensure_audio, prefetch, is_prefetch_ready, cleanup
@@ -15,6 +16,10 @@ def _init():
         'prefetch_idx': None,
         'gh_files': [],
         '_book_id': 0,
+        'bookmarks': [],
+        'advance_mode': 'manual',
+        '_last_timed_page': -1,
+        'page_start_time': 0.0,
     }
     for k, v in defaults.items():
         st.session_state.setdefault(k, v)
@@ -32,6 +37,17 @@ def _load_book(pages: list[str]):
     st.session_state.audio_cache = {}
     st.session_state.prefetch_thread = None
     st.session_state.prefetch_idx = None
+    st.session_state.bookmarks = []
+    st.session_state['_last_timed_page'] = -1
+    st.session_state['page_start_time'] = 0.0
+
+
+def _jump_to(page_idx: int):
+    """Navigate to page_idx, cleaning up the current page's audio."""
+    cleanup(st.session_state.current_page)
+    st.session_state['_last_timed_page'] = -1  # reset timer for new page
+    st.session_state.current_page = page_idx
+    st.rerun()
 
 
 def _sidebar():
@@ -80,6 +96,72 @@ def _sidebar():
                         except Exception as e:
                             st.error(f"Could not load file: {e}")
 
+        # Navigation section (only shown when a book is loaded)
+        if st.session_state.book_loaded:
+            st.divider()
+            st.subheader("Navigation")
+
+            # Advance mode
+            st.session_state.advance_mode = st.radio(
+                "Page advance",
+                options=["manual", "auto"],
+                format_func=lambda x: "Manual (Next button)" if x == "manual" else "Auto-advance",
+                key="advance_mode_radio",
+                index=0 if st.session_state.advance_mode == "manual" else 1,
+            )
+
+            # Page jump
+            total = len(st.session_state.pages)
+            idx = st.session_state.current_page
+            col_input, col_btn = st.columns([3, 1])
+            with col_input:
+                target = st.number_input(
+                    "Jump to page",
+                    min_value=1,
+                    max_value=total,
+                    value=idx + 1,
+                    step=1,
+                    key="page_jump_input",
+                )
+            with col_btn:
+                st.write("")  # vertical alignment spacer
+                if st.button("Go", key="page_jump_btn"):
+                    _jump_to(int(target) - 1)
+
+            # Bookmark list
+            st.markdown("**Bookmarks**")
+            bookmarks = st.session_state.bookmarks
+            if not bookmarks:
+                st.caption("No bookmarks yet.")
+            else:
+                for i, bm in enumerate(bookmarks):
+                    col_label, col_go, col_del = st.columns([4, 1, 1])
+                    with col_label:
+                        st.write(f"{bm['label']} (p.{bm['page'] + 1})")
+                    with col_go:
+                        if st.button("Go", key=f"bm_go_{i}"):
+                            _jump_to(bm['page'])
+                    with col_del:
+                        if st.button("✕", key=f"bm_del_{i}"):
+                            st.session_state.bookmarks.pop(i)
+                            st.rerun()
+
+            # Add bookmark form
+            with st.expander("+ Add bookmark", expanded=False):
+                label = st.text_input(
+                    "Label",
+                    placeholder=f"e.g. Chapter {idx + 1}",
+                    key="bm_label_input",
+                )
+                if st.button(f"Bookmark page {idx + 1}", key="bm_add_btn"):
+                    if not label.strip():
+                        st.warning("Please enter a label.")
+                    else:
+                        st.session_state.bookmarks.append(
+                            {"label": label.strip(), "page": idx}
+                        )
+                        st.rerun()
+
 
 def _player():
     pages = st.session_state.pages
@@ -97,6 +179,27 @@ def _player():
 
     st.audio(audio_bytes, format='audio/mp3')
 
+    # Auto-advance mode: timer starts after audio is ready
+    if st.session_state.advance_mode == 'auto' and idx + 1 < total:
+        from streamlit_autorefresh import st_autorefresh
+        st_autorefresh(interval=2000, key="auto_advance_tick")
+
+        # Start timer the first time this page is displayed
+        if st.session_state.get('_last_timed_page') != idx:
+            st.session_state['page_start_time'] = time.time()
+            st.session_state['_last_timed_page'] = idx
+
+        elapsed = time.time() - st.session_state['page_start_time']
+        estimated = len(pages[idx]) / 15  # ~900 chars/min ÷ 60 = 15 chars/sec
+        remaining = max(0, int(estimated - elapsed))
+        st.info(f"Auto-advancing in {remaining}s...")
+
+        if elapsed >= estimated:
+            cleanup(idx)
+            st.session_state['_last_timed_page'] = -1
+            st.session_state.current_page += 1
+            st.rerun()
+
     # Kick off background prefetch for next page
     if idx + 1 < total:
         prefetch(idx + 1, pages)
@@ -108,18 +211,21 @@ def _player():
         else:
             st.info("Next page audio: generating... ⏳")
 
-    # Navigation buttons
+    # Navigation buttons (always show Prev; Next only in manual mode)
     col1, col2, col3 = st.columns([1, 6, 1])
     with col1:
         if idx > 0 and st.button("◀ Prev", key="prev_btn"):
-            cleanup(idx)  # page just played; going back means we're done with it
+            cleanup(idx)
+            st.session_state['_last_timed_page'] = -1
             st.session_state.current_page -= 1
             st.rerun()
     with col3:
-        if idx + 1 < total and st.button("Next ▶", key="next_btn"):
-            cleanup(idx)  # page just finished playing
-            st.session_state.current_page += 1
-            st.rerun()
+        if st.session_state.advance_mode == 'manual' and idx + 1 < total:
+            if st.button("Next ▶", key="next_btn"):
+                cleanup(idx)
+                st.session_state['_last_timed_page'] = -1
+                st.session_state.current_page += 1
+                st.rerun()
 
     if idx + 1 >= total:
         st.balloons()
