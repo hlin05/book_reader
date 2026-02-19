@@ -85,7 +85,7 @@ def _sidebar():
             if uploaded and st.button("Load Book", key="load_file_btn"):
                 with st.spinner("Parsing book..."):
                     if uploaded.name.lower().endswith('.pdf'):
-                        pages = parse_pdf(uploaded.read())
+                        pages = parse_pdf(uploaded.read(), lang=st.session_state.lang)
                     else:
                         pages = parse_text(uploaded.read().decode('utf-8'), lang=st.session_state.lang)
                 if not pages:

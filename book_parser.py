@@ -56,13 +56,18 @@ def _parse_text_chinese(text: str, chars_per_page: int) -> list[str]:
     return pages
 
 
-def parse_pdf(file_bytes: bytes) -> list[str]:
-    """Extract text from PDF bytes. Returns one string per non-blank PDF page."""
+def parse_pdf(file_bytes: bytes, words_per_page: int = 1000, lang: str = 'en') -> list[str]:
+    """Extract text from PDF bytes. Sub-splits pages exceeding words_per_page."""
     doc = fitz.open(stream=file_bytes, filetype="pdf")
     pages = []
     for page in doc:
         text = page.get_text().strip()
-        if text:
+        if not text:
+            continue
+        if len(text.split()) > words_per_page:
+            sub_pages = parse_text(text, words_per_page=words_per_page, lang=lang)
+            pages.extend(sub_pages)
+        else:
             pages.append(text)
     doc.close()
     return pages

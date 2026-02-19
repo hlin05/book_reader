@@ -41,7 +41,8 @@ def _make_pdf(pages: list[str]) -> bytes:
     for text in pages:
         page = doc.new_page()
         if text.strip():
-            page.insert_text((50, 50), text)
+            rect = fitz.Rect(50, 50, 550, 800)
+            page.insert_textbox(rect, text, fontsize=8)
     buf = doc.tobytes()
     doc.close()
     return buf
@@ -138,4 +139,21 @@ def test_parse_text_word_cap_custom_limit():
 def test_parse_text_word_cap_does_not_split_short_page():
     text = "Short sentence. Another one. Third one."
     pages = parse_text(text, words_per_page=1000)
+    assert len(pages) == 1
+
+
+def test_parse_pdf_sub_splits_page_over_word_limit():
+    # ~200-word page should be split under a 50-word cap
+    sentence = "The fox jumped over the lazy dog again. "
+    long_text = sentence * 25
+    pdf = _make_pdf([long_text])
+    pages = parse_pdf(pdf, words_per_page=50)
+    assert len(pages) > 1
+    word_counts = [len(p.split()) for p in pages]
+    assert all(wc <= 50 for wc in word_counts)
+
+
+def test_parse_pdf_does_not_split_page_under_word_limit():
+    pdf = _make_pdf(["Short page with just a few words."])
+    pages = parse_pdf(pdf, words_per_page=1000)
     assert len(pages) == 1
