@@ -3,8 +3,18 @@ import requests
 import fitz  # PyMuPDF
 
 
-def parse_text(text: str, chars_per_page: int = 1500) -> list[str]:
-    """Split text into pages at sentence boundaries, targeting chars_per_page characters each."""
+def parse_text(text: str, chars_per_page: int = 1500, lang: str = 'en') -> list[str]:
+    """Split text into pages at sentence boundaries, targeting chars_per_page characters each.
+
+    For Chinese (lang='zh'), splits on Chinese punctuation and joins without spaces.
+    Default chars_per_page is lower for Chinese since characters are more content-dense.
+    """
+    if lang == 'zh':
+        return _parse_text_chinese(text, chars_per_page if chars_per_page != 1500 else 600)
+    return _parse_text_latin(text, chars_per_page)
+
+
+def _parse_text_latin(text: str, chars_per_page: int) -> list[str]:
     sentences = re.split(r'(?<=[.!?])\s+', text.strip())
     pages, current, current_len = [], [], 0
 
@@ -18,6 +28,25 @@ def parse_text(text: str, chars_per_page: int = 1500) -> list[str]:
 
     if current:
         pages.append(' '.join(current))
+
+    return pages
+
+
+def _parse_text_chinese(text: str, chars_per_page: int) -> list[str]:
+    """Split Chinese text at sentence-ending punctuation (。！？), no spaces between sentences."""
+    sentences = re.split(r'(?<=[。！？])', text.strip())
+    pages, current, current_len = [], [], 0
+
+    for sentence in sentences:
+        if current and current_len + len(sentence) > chars_per_page:
+            pages.append(''.join(current))
+            current, current_len = [sentence], len(sentence)
+        else:
+            current.append(sentence)
+            current_len += len(sentence)
+
+    if current:
+        pages.append(''.join(current))
 
     return pages
 

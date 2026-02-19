@@ -22,14 +22,14 @@ def get_audio(page_idx: int) -> bytes | None:
     return None
 
 
-def ensure_audio(page_idx: int, pages: list[str]) -> bytes:
+def ensure_audio(page_idx: int, pages: list[str], lang: str = 'en', speed: float = 1.0) -> bytes:
     """Return MP3 bytes for page_idx, generating synchronously if not cached."""
     _init_state()
     cached = get_audio(page_idx)
     if cached:
         return cached
 
-    audio_bytes = tts.generate_audio(pages[page_idx])
+    audio_bytes = tts.generate_audio(pages[page_idx], lang=lang, speed=speed)
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
     tmp.write(audio_bytes)
     tmp.close()
@@ -37,7 +37,7 @@ def ensure_audio(page_idx: int, pages: list[str]) -> bytes:
     return audio_bytes
 
 
-def prefetch(page_idx: int, pages: list[str]) -> None:
+def prefetch(page_idx: int, pages: list[str], lang: str = 'en', speed: float = 1.0) -> None:
     """Start a background thread to generate audio for page_idx if not already cached."""
     _init_state()
     if page_idx < 0 or page_idx >= len(pages):
@@ -55,7 +55,7 @@ def prefetch(page_idx: int, pages: list[str]) -> None:
     book_id = st.session_state['_book_id']
 
     def _worker():
-        audio_bytes = tts.generate_audio(pages[page_idx], api_key=api_key)
+        audio_bytes = tts.generate_audio(pages[page_idx], api_key=api_key, lang=lang, speed=speed)
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
         tmp.write(audio_bytes)
         tmp.close()

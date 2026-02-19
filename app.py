@@ -20,9 +20,19 @@ def _init():
         'advance_mode': 'manual',
         '_last_timed_page': -1,
         'page_start_time': 0.0,
+        'lang': 'en',
+        'speed': 1.0,
     }
     for k, v in defaults.items():
         st.session_state.setdefault(k, v)
+
+
+def _on_speed_change():
+    """Clear audio cache when speed changes so next render regenerates at new speed."""
+    for idx in list(st.session_state.audio_cache.keys()):
+        cleanup(idx)
+    st.session_state.prefetch_thread = None
+    st.session_state.prefetch_idx = None
 
 
 def _load_book(pages: list[str]):
@@ -53,6 +63,21 @@ def _jump_to(page_idx: int):
 def _sidebar():
     with st.sidebar:
         st.title("📖 Book Reader")
+        st.session_state.lang = st.radio(
+            "Language",
+            options=["en", "zh"],
+            format_func=lambda x: "English" if x == "en" else "Chinese (中文)",
+            key="lang_radio",
+            index=0 if st.session_state.lang == "en" else 1,
+        )
+        st.select_slider(
+            "Reading speed",
+            options=[0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0],
+            value=st.session_state.speed,
+            format_func=lambda x: f"{x}×",
+            key="speed",
+            on_change=_on_speed_change,
+        )
         source = st.radio("Input source", ["Upload file", "GitHub repo"], key="source_radio")
 
         if source == "Upload file":
@@ -62,7 +87,7 @@ def _sidebar():
                     if uploaded.name.lower().endswith('.pdf'):
                         pages = parse_pdf(uploaded.read())
                     else:
-                        pages = parse_text(uploaded.read().decode('utf-8'))
+                        pages = parse_text(uploaded.read().decode('utf-8'), lang=st.session_state.lang)
                 if not pages:
                     st.error("No readable pages found.")
                 else:
@@ -86,11 +111,12 @@ def _sidebar():
             if st.session_state.gh_files:
                 options = {f['name']: f['raw_url'] for f in st.session_state.gh_files}
                 selected = st.selectbox("Select file to read", list(options.keys()))
+                st.caption(f"`{selected}`")
                 if st.button("Load file", key="load_gh_btn"):
                     with st.spinner("Fetching and parsing..."):
                         try:
                             text = fetch_github_file(options[selected], token)
-                            pages = parse_text(text)
+                            pages = parse_text(text, lang=st.session_state.lang)
                             _load_book(pages)
                             st.rerun()
                         except Exception as e:
@@ -175,7 +201,7 @@ def _player():
         st.write(pages[idx])
 
     with st.spinner("Generating audio..."):
-        audio_bytes = ensure_audio(idx, pages)
+        audio_bytes = ensure_audio(idx, pages, lang=st.session_state.lang, speed=st.session_state.speed)
 
     st.audio(audio_bytes, format='audio/mp3')
 
@@ -202,7 +228,7 @@ def _player():
 
     # Kick off background prefetch for next page
     if idx + 1 < total:
-        prefetch(idx + 1, pages)
+        prefetch(idx + 1, pages, lang=st.session_state.lang, speed=st.session_state.speed)
 
     # Show prefetch status
     if idx + 1 < total:
