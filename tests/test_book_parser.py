@@ -111,3 +111,26 @@ def test_fetch_github_file_returns_text(mocker):
 
     text = fetch_github_file('https://raw.githubusercontent.com/user/repo/main/README.md')
     assert "Hello world" in text
+
+
+def test_parse_text_word_cap_splits_long_page():
+    # 50 sentences × ~13 words = ~650 words — exceeds 50-word cap used here
+    sentence = "The quick brown fox jumps over the lazy dog and runs away fast. "
+    text = sentence * 50
+    pages = parse_text(text, words_per_page=50)
+    word_counts = [len(p.split()) for p in pages]
+    assert all(wc <= 50 for wc in word_counts)
+
+
+def test_parse_text_word_cap_custom_limit():
+    sentence = "Hello world this is a test sentence with many words. "
+    text = sentence * 30  # 30 × ~10 words = ~300 words
+    pages = parse_text(text, words_per_page=50)
+    word_counts = [len(p.split()) for p in pages]
+    assert all(wc <= 50 for wc in word_counts)
+
+
+def test_parse_text_word_cap_does_not_split_short_page():
+    text = "Short sentence. Another one. Third one."
+    pages = parse_text(text, words_per_page=1000)
+    assert len(pages) == 1

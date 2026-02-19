@@ -3,7 +3,7 @@ import requests
 import fitz  # PyMuPDF
 
 
-def parse_text(text: str, chars_per_page: int = 1500, lang: str = 'en') -> list[str]:
+def parse_text(text: str, chars_per_page: int = 1500, words_per_page: int = 1000, lang: str = 'en') -> list[str]:
     """Split text into pages at sentence boundaries, targeting chars_per_page characters each.
 
     For Chinese (lang='zh'), splits on Chinese punctuation and joins without spaces.
@@ -11,20 +11,25 @@ def parse_text(text: str, chars_per_page: int = 1500, lang: str = 'en') -> list[
     """
     if lang == 'zh':
         return _parse_text_chinese(text, chars_per_page if chars_per_page != 1500 else 600)
-    return _parse_text_latin(text, chars_per_page)
+    return _parse_text_latin(text, chars_per_page, words_per_page)
 
 
-def _parse_text_latin(text: str, chars_per_page: int) -> list[str]:
+def _parse_text_latin(text: str, chars_per_page: int, words_per_page: int = 1000) -> list[str]:
     sentences = re.split(r'(?<=[.!?])\s+', text.strip())
-    pages, current, current_len = [], [], 0
+    pages, current, current_len, current_words = [], [], 0, 0
 
     for sentence in sentences:
-        if current and current_len + len(sentence) > chars_per_page:
+        sentence_words = len(sentence.split())
+        if current and (
+            current_len + len(sentence) > chars_per_page
+            or current_words + sentence_words > words_per_page
+        ):
             pages.append(' '.join(current))
-            current, current_len = [sentence], len(sentence)
+            current, current_len, current_words = [sentence], len(sentence), sentence_words
         else:
             current.append(sentence)
             current_len += len(sentence) + 1
+            current_words += sentence_words
 
     if current:
         pages.append(' '.join(current))
