@@ -20,7 +20,7 @@ def test_ensure_audio_generates_and_caches(mocker):
 def test_ensure_audio_uses_cache_on_second_call(mocker):
     call_count = {'n': 0}
 
-    def counting_tts(text, api_key=None, lang='en'):
+    def counting_tts(text, api_key=None, lang='en', speed=1.0):
         call_count['n'] += 1
         return b'audio'
 
