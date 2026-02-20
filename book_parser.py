@@ -65,6 +65,7 @@ def parse_pdf(file_bytes: bytes, words_per_page: int = 1000, lang: str = 'en') -
         if not text:
             continue
         if len(text.split()) > words_per_page:
+            # chars_per_page intentionally uses its default (1500) here; the word cap is the active limit
             sub_pages = parse_text(text, words_per_page=words_per_page, lang=lang)
             pages.extend(sub_pages)
         else:

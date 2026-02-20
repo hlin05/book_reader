@@ -42,7 +42,8 @@ def _make_pdf(pages: list[str]) -> bytes:
         page = doc.new_page()
         if text.strip():
             rect = fitz.Rect(50, 50, 550, 800)
-            page.insert_textbox(rect, text, fontsize=8)
+            rc = page.insert_textbox(rect, text, fontsize=8)
+            assert rc >= 0, f"_make_pdf: text clipped by {rc:.1f}pt; use a larger rect or smaller fontsize"
     buf = doc.tobytes()
     doc.close()
     return buf
