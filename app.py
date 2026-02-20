@@ -199,42 +199,19 @@ def _player():
 
     st.audio(audio_bytes, format='audio/mp3')
 
-    # JS audio-end auto-advance
-    if st.session_state.advance_mode == 'auto':
-        # Check for signal set by JS when audio ended
-        advance_signal = st.query_params.get('auto_advance')
-        if advance_signal is not None:
-            try:
-                signal_idx = int(advance_signal)
-            except ValueError:
-                signal_idx = -1
-            st.query_params.pop('auto_advance', None)
-            if signal_idx == idx and idx + 1 < total:
-                cleanup(idx)
-                st.session_state.current_page += 1
-                st.rerun()
-
-        # Inject JS that fires when the audio element ends
-        if idx + 1 < total:
-            st.components.v1.html(
-                f"""<script>
-                (function() {{
-                    function tryBind() {{
-                        var audio = window.parent.document.querySelector('audio');
-                        if (!audio) {{ setTimeout(tryBind, 200); return; }}
-                        if (audio.dataset.advanceBound === '{idx}') return;
-                        audio.dataset.advanceBound = '{idx}';
-                        audio.addEventListener('ended', function() {{
-                            var url = new URL(window.parent.location.href);
-                            url.searchParams.set('auto_advance', '{idx}');
-                            window.parent.location.href = url.toString();
-                        }});
-                    }}
-                    tryBind();
-                }})();
-                </script>""",
-                height=0,
-            )
+    # Audio-end auto-advance: poll every 1s and check if the audio element has ended
+    if st.session_state.advance_mode == 'auto' and idx + 1 < total:
+        from streamlit_autorefresh import st_autorefresh
+        from streamlit_js_eval import streamlit_js_eval
+        st_autorefresh(interval=1000, key="audio_end_poll")
+        audio_ended = streamlit_js_eval(
+            js_expressions="document.querySelector('audio')?.ended === true",
+            key=f"audio_end_{idx}",
+        )
+        if audio_ended:
+            cleanup(idx)
+            st.session_state.current_page += 1
+            st.rerun()
 
     # Kick off background prefetch for next page
     if idx + 1 < total:
