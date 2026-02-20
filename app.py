@@ -1,4 +1,3 @@
-import time
 import streamlit as st
 from book_parser import parse_text, parse_pdf, fetch_github_files, fetch_github_file
 from audio_manager import ensure_audio, prefetch, is_prefetch_ready, cleanup
@@ -18,8 +17,6 @@ def _init():
         '_book_id': 0,
         'bookmarks': [],
         'advance_mode': 'manual',
-        '_last_timed_page': -1,
-        'page_start_time': 0.0,
         'lang': 'en',
         'speed': 1.0,
     }
@@ -48,14 +45,11 @@ def _load_book(pages: list[str]):
     st.session_state.prefetch_thread = None
     st.session_state.prefetch_idx = None
     st.session_state.bookmarks = []
-    st.session_state['_last_timed_page'] = -1
-    st.session_state['page_start_time'] = 0.0
 
 
 def _jump_to(page_idx: int):
     """Navigate to page_idx, cleaning up the current page's audio."""
     cleanup(st.session_state.current_page)
-    st.session_state['_last_timed_page'] = -1  # reset timer for new page
     st.session_state.current_page = page_idx
     st.rerun()
 
@@ -205,26 +199,42 @@ def _player():
 
     st.audio(audio_bytes, format='audio/mp3')
 
-    # Auto-advance mode: timer starts after audio is ready
-    if st.session_state.advance_mode == 'auto' and idx + 1 < total:
-        from streamlit_autorefresh import st_autorefresh
-        st_autorefresh(interval=2000, key="auto_advance_tick")
+    # JS audio-end auto-advance
+    if st.session_state.advance_mode == 'auto':
+        # Check for signal set by JS when audio ended
+        advance_signal = st.query_params.get('auto_advance')
+        if advance_signal is not None:
+            try:
+                signal_idx = int(advance_signal)
+            except ValueError:
+                signal_idx = -1
+            st.query_params.pop('auto_advance', None)
+            if signal_idx == idx and idx + 1 < total:
+                cleanup(idx)
+                st.session_state.current_page += 1
+                st.rerun()
 
-        # Start timer the first time this page is displayed
-        if st.session_state.get('_last_timed_page') != idx:
-            st.session_state['page_start_time'] = time.time()
-            st.session_state['_last_timed_page'] = idx
-
-        elapsed = time.time() - st.session_state['page_start_time']
-        estimated = len(pages[idx]) / 15  # ~900 chars/min ÷ 60 = 15 chars/sec
-        remaining = max(0, int(estimated - elapsed))
-        st.info(f"Auto-advancing in {remaining}s...")
-
-        if elapsed >= estimated:
-            cleanup(idx)
-            st.session_state['_last_timed_page'] = -1
-            st.session_state.current_page += 1
-            st.rerun()
+        # Inject JS that fires when the audio element ends
+        if idx + 1 < total:
+            st.components.v1.html(
+                f"""<script>
+                (function() {{
+                    function tryBind() {{
+                        var audio = window.parent.document.querySelector('audio');
+                        if (!audio) {{ setTimeout(tryBind, 200); return; }}
+                        if (audio.dataset.advanceBound === '{idx}') return;
+                        audio.dataset.advanceBound = '{idx}';
+                        audio.addEventListener('ended', function() {{
+                            var url = new URL(window.parent.location.href);
+                            url.searchParams.set('auto_advance', '{idx}');
+                            window.parent.location.href = url.toString();
+                        }});
+                    }}
+                    tryBind();
+                }})();
+                </script>""",
+                height=0,
+            )
 
     # Kick off background prefetch for next page
     if idx + 1 < total:
@@ -242,14 +252,12 @@ def _player():
     with col1:
         if idx > 0 and st.button("◀ Prev", key="prev_btn"):
             cleanup(idx)
-            st.session_state['_last_timed_page'] = -1
             st.session_state.current_page -= 1
             st.rerun()
     with col3:
         if st.session_state.advance_mode == 'manual' and idx + 1 < total:
             if st.button("Next ▶", key="next_btn"):
                 cleanup(idx)
-                st.session_state['_last_timed_page'] = -1
                 st.session_state.current_page += 1
                 st.rerun()
 
