@@ -18,6 +18,8 @@ def _parse_text_latin(text: str, chars_per_page: int, words_per_page: int = 1000
     sentences = re.split(r'(?<=[.!?])\s+', text.strip())
     pages, current, current_len, current_words = [], [], 0, 0
 
+    # Note: a single sentence that individually exceeds either limit is always accepted as-is
+    # (the `if current` guard skips the flush for the first item in a new page).
     for sentence in sentences:
         sentence_words = len(sentence.split())
         if current and (
@@ -65,7 +67,8 @@ def parse_pdf(file_bytes: bytes, words_per_page: int = 1000, lang: str = 'en') -
         if not text:
             continue
         if len(text.split()) > words_per_page:
-            # chars_per_page intentionally uses its default (1500) here; the word cap is the active limit.
+            # Both limits apply. For typical prose, chars_per_page=1500 (~200-300 words) binds first;
+            # the word cap is binding only for text with unusually long sentences.
             # For Chinese (lang='zh'), parse_text routes to _parse_text_chinese which uses chars_per_page=600
             # and ignores words_per_page — Chinese word-count semantics differ from Latin-script text.
             sub_pages = parse_text(text, words_per_page=words_per_page, lang=lang)

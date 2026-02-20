@@ -204,6 +204,8 @@ def _player():
         from streamlit_autorefresh import st_autorefresh
         from streamlit_js_eval import streamlit_js_eval
         st_autorefresh(interval=1000, key="audio_end_poll")
+        # Selects the first (and only) <audio> element on the page. If a second st.audio()
+        # call is ever added elsewhere, this selector must be made more specific.
         audio_ended = streamlit_js_eval(
             js_expressions="document.querySelector('audio')?.ended === true",
             key=f"audio_end_{idx}",
