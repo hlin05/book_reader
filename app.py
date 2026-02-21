@@ -192,7 +192,7 @@ def _player():
     st.progress((idx + 1) / total)
 
     with st.expander("Page text", expanded=True):
-        st.write(pages[idx])
+        st.markdown(pages[idx].replace('\n', '\n\n'))
 
     with st.spinner("Generating audio..."):
         audio_bytes = ensure_audio(idx, pages, lang=st.session_state.lang, speed=st.session_state.speed)
