@@ -10,7 +10,7 @@ def parse_text(text: str, chars_per_page: int = 1500, words_per_page: int = 1000
     Default chars_per_page is lower for Chinese since characters are more content-dense.
     """
     if lang == 'zh':
-        return _parse_text_chinese(text, chars_per_page if chars_per_page != 1500 else 600)
+        return _parse_text_chinese(text, chars_per_page if chars_per_page != 1500 else 1200)
     return _parse_text_latin(text, chars_per_page, words_per_page)
 
 
@@ -69,7 +69,7 @@ def parse_pdf(file_bytes: bytes, words_per_page: int = 1000, lang: str = 'en') -
         if len(text.split()) > words_per_page:
             # Both limits apply. For typical prose, chars_per_page=1500 (~200-300 words) binds first;
             # the word cap is binding only for text with unusually long sentences.
-            # For Chinese (lang='zh'), parse_text routes to _parse_text_chinese which uses chars_per_page=600
+            # For Chinese (lang='zh'), parse_text routes to _parse_text_chinese which uses chars_per_page=1200
             # and ignores words_per_page — Chinese word-count semantics differ from Latin-script text.
             sub_pages = parse_text(text, words_per_page=words_per_page, lang=lang)
             pages.extend(sub_pages)
