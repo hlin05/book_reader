@@ -22,9 +22,7 @@ def generate_audio(text: str, api_key: str | None = None, lang: str = 'en', spee
         api_key = st.secrets.get("OPENAI_API_KEY", None)
     if api_key:
         return _openai_tts(text, api_key, speed=speed)
-    if lang == 'zh':
-        return _edge_tts(text, lang, speed=speed)
-    return _gtts(text, lang=lang)
+    return _edge_tts(text, lang, speed=speed)
 
 
 def _edge_tts(text: str, lang: str = 'zh', speed: float = 1.0) -> bytes:
