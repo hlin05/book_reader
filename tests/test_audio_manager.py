@@ -64,6 +64,30 @@ def test_prefetch_populates_cache_in_background(mocker):
     assert audio_manager.get_audio(1) == b'prefetched'
 
 
+def test_prefetch_populates_cache_when_book_id_nonzero(mocker):
+    """Regression: prefetch must cache audio even when book_id > 0.
+
+    In Streamlit's runtime, background threads have no ScriptRunContext so
+    st.session_state returns a default-empty view.  The previous _worker checked
+    `st.session_state.get('_book_id') == book_id`; with book_id=1 the thread saw
+    _book_id=0 -> mismatch -> deleted the audio file without caching it.
+    Fix: _worker writes directly to the captured dict reference instead.
+    """
+    mocker.patch('tts.generate_audio', return_value=b'prefetched')
+    import audio_manager
+
+    st.session_state['_book_id'] = 1  # simulates state after book load
+    pages = ["Page one.", "Page two."]
+    audio_manager.prefetch(1, pages)
+
+    deadline = time.time() + 5
+    while not audio_manager.is_prefetch_ready(1):
+        assert time.time() < deadline, "Prefetch timed out — audio_cache never populated"
+        time.sleep(0.05)
+
+    assert audio_manager.get_audio(1) == b'prefetched'
+
+
 def test_prefetch_ignores_out_of_bounds_index(mocker):
     mocker.patch('tts.generate_audio', return_value=b'audio')
     import audio_manager
