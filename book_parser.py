@@ -58,23 +58,53 @@ def _parse_text_chinese(text: str, chars_per_page: int) -> list[str]:
     return pages
 
 
-def parse_pdf(file_bytes: bytes, words_per_page: int = 1000, lang: str = 'en') -> list[str]:
-    """Extract text from PDF bytes. Sub-splits pages exceeding words_per_page."""
+def parse_pdf(file_bytes: bytes, words_per_page: int = 500, lang: str = 'en') -> list[str]:
+    """Extract text from PDF bytes and split into app pages.
+
+    Short PDF pages are merged until the size limit is reached, then flushed. Oversized chunks
+    are sub-split via parse_text. For Chinese (lang='zh'), accumulation uses char count instead
+    of word count because Chinese text has no spaces between characters, making split()-based
+    word counting wildly underestimate page size (e.g. 800-char page counts as ~1 "word").
+    """
+    # Chinese: target 1200 chars/page (matches parse_text's Chinese default).
+    # English: target words_per_page words/page.
+    _zh_chars_limit = 1200
+
     doc = fitz.open(stream=file_bytes, filetype="pdf")
-    pages = []
+    pages: list[str] = []
+    current_chunks: list[str] = []
+    current_words = 0
+    current_chars = 0
+
+    def _flush():
+        combined = '\n\n'.join(current_chunks)
+        too_large = (len(combined) > _zh_chars_limit) if lang == 'zh' else (len(combined.split()) > words_per_page)
+        if too_large:
+            pages.extend(parse_text(combined, words_per_page=words_per_page, lang=lang))
+        else:
+            pages.append(combined)
+
     for page in doc:
         text = page.get_text().strip()
         if not text:
             continue
-        if len(text.split()) > words_per_page:
-            # Both limits apply. For typical prose, chars_per_page=1500 (~200-300 words) binds first;
-            # the word cap is binding only for text with unusually long sentences.
-            # For Chinese (lang='zh'), parse_text routes to _parse_text_chinese which uses chars_per_page=1200
-            # and ignores words_per_page — Chinese word-count semantics differ from Latin-script text.
-            sub_pages = parse_text(text, words_per_page=words_per_page, lang=lang)
-            pages.extend(sub_pages)
+        page_words = len(text.split())
+        page_chars = len(text)
+        if lang == 'zh':
+            should_flush = current_chunks and current_chars + page_chars > _zh_chars_limit
         else:
-            pages.append(text)
+            should_flush = current_chunks and current_words + page_words > words_per_page
+        if should_flush:
+            _flush()
+            current_chunks, current_words, current_chars = [text], page_words, page_chars
+        else:
+            current_chunks.append(text)
+            current_words += page_words
+            current_chars += page_chars
+
+    if current_chunks:
+        _flush()
+
     doc.close()
     return pages
 
