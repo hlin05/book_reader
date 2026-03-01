@@ -209,12 +209,19 @@ def _player():
     with st.spinner("Generating audio..."):
         audio_bytes = ensure_audio(idx, pages, lang=st.session_state.lang, speed=st.session_state.speed)
 
-    st.audio(audio_bytes, format='audio/mp3')
+    autoplay = st.session_state.advance_mode == 'auto'
+    st.audio(audio_bytes, format='audio/mpeg', autoplay=autoplay)
 
     # Audio-end auto-advance: poll every 1s and check if the audio element has ended
     if st.session_state.advance_mode == 'auto' and idx + 1 < total:
         from streamlit_autorefresh import st_autorefresh
         from streamlit_js_eval import streamlit_js_eval
+        # Attempt to play the just-rendered audio element; fires within the
+        # user-activation window from the previous page's 'ended' event.
+        streamlit_js_eval(
+            js_expressions="document.querySelector('audio')?.play()",
+            key=f"autoplay_{idx}",
+        )
         st_autorefresh(interval=1000, key="audio_end_poll")
         # Selects the first (and only) <audio> element on the page. If a second st.audio()
         # call is ever added elsewhere, this selector must be made more specific.
