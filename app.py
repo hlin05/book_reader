@@ -1,5 +1,5 @@
 import streamlit as st
-from book_parser import parse_text, parse_pdf, fetch_github_files, fetch_github_file
+from book_parser import parse_text, parse_pdf, fetch_github_files, fetch_github_file, github_url_to_raw
 from audio_manager import ensure_audio, prefetch, is_prefetch_ready, cleanup
 
 st.set_page_config(page_title="Book Reader", page_icon="📖", layout="wide")
@@ -95,12 +95,24 @@ def _sidebar():
             token = st.secrets.get("GITHUB_TOKEN", None)
 
             if repo_url and st.button("List files", key="list_gh_btn"):
-                with st.spinner("Fetching file list..."):
-                    try:
-                        files = fetch_github_files(repo_url, token)
-                        st.session_state.gh_files = files
-                    except Exception as e:
-                        st.error(f"Could not fetch repo: {e}")
+                raw_url = github_url_to_raw(repo_url)
+                if raw_url:
+                    # Direct file link — load immediately
+                    with st.spinner("Fetching and parsing..."):
+                        try:
+                            text = fetch_github_file(raw_url, token)
+                            pages = parse_text(text, lang=st.session_state.lang)
+                            _load_book(pages)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Could not load file: {e}")
+                else:
+                    with st.spinner("Fetching file list..."):
+                        try:
+                            files = fetch_github_files(repo_url, token)
+                            st.session_state.gh_files = files
+                        except Exception as e:
+                            st.error(f"Could not fetch repo: {e}")
 
             if st.session_state.gh_files:
                 options = {f['name']: f['raw_url'] for f in st.session_state.gh_files}
@@ -192,7 +204,7 @@ def _player():
     st.progress((idx + 1) / total)
 
     with st.expander("Page text", expanded=True):
-        st.write(pages[idx])
+        st.markdown(pages[idx].replace('\n', '\n\n'))
 
     with st.spinner("Generating audio..."):
         audio_bytes = ensure_audio(idx, pages, lang=st.session_state.lang, speed=st.session_state.speed)

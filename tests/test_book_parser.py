@@ -49,10 +49,36 @@ def _make_pdf(pages: list[str]) -> bytes:
     return buf
 
 
-def test_parse_pdf_one_page_per_pdf_page():
-    pdf = _make_pdf(["Page one content.", "Page two content."])
-    pages = parse_pdf(pdf)
+def test_parse_pdf_merges_short_pages_under_word_limit():
+    """Short PDF pages should be merged into a single app page when combined words < limit."""
+    pdf = _make_pdf(["Page one content.", "Page two content.", "Page three content."])
+    pages = parse_pdf(pdf, words_per_page=100)
+    assert len(pages) == 1
+
+
+def test_parse_pdf_flushes_when_word_limit_reached():
+    """Once accumulated PDF pages would exceed words_per_page, flush into new app page."""
+    # Each PDF page has ~50 words; limit 100 → every 2 PDF pages → 1 app page → 2 total
+    fifty_words = ("word " * 9 + "end. ") * 5  # 10 words × 5 = 50 words per PDF page
+    pdf = _make_pdf([fifty_words, fifty_words, fifty_words, fifty_words])
+    pages = parse_pdf(pdf, words_per_page=100)
     assert len(pages) == 2
+
+
+def test_parse_pdf_chinese_uses_char_limit_not_word_limit():
+    """Chinese PDF pages must be merged by char count, not split()-word count.
+
+    Chinese has no spaces between characters so split()-word count is ~1 per page,
+    which causes word-based merging to accumulate dozens of PDF pages into one huge chunk.
+    """
+    # ~600-char page; split()-words ≈ 1 (no spaces in Chinese).
+    # Word-based limit of 500 would merge all 3 pages into 1 (3 words << 500).
+    # Char-based limit of 1200 should flush after 2 pages (600+600=1200) → 2 app pages.
+    zh_page = "这是一段中文测试文本。" * 60  # ~600 chars, 1 split()-word
+    pdf = _make_pdf([zh_page, zh_page, zh_page])
+    pages = parse_pdf(pdf, lang='zh')
+    assert len(pages) >= 2, "word-based merging collapsed all Chinese pages into one giant chunk"
+    assert all(len(p) <= 1500 for p in pages), "merged Chinese page exceeds reasonable char limit"
 
 
 def test_parse_pdf_preserves_text():
@@ -64,7 +90,11 @@ def test_parse_pdf_preserves_text():
 def test_parse_pdf_skips_blank_pages():
     pdf = _make_pdf(["Content.", "", "More content."])
     pages = parse_pdf(pdf)
-    assert len(pages) == 2  # blank page skipped
+    # blank page skipped; both short non-blank pages merge into one
+    assert all(p.strip() for p in pages)  # no empty app pages
+    full = ' '.join(pages)
+    assert "Content" in full
+    assert "More content" in full
 
 
 # --- GitHub integration ---

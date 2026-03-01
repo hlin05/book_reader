@@ -50,20 +50,21 @@ def prefetch(page_idx: int, pages: list[str], lang: str = 'en', speed: float = 1
         if t and t.is_alive():
             return
 
-    # Resolve api_key and book_id in the main thread — st.secrets is not safe from threads
+    # Resolve values in the main thread — background threads have no ScriptRunContext
+    # so st.session_state and st.secrets are inaccessible from them.
     api_key = st.secrets.get("OPENAI_API_KEY", None)
-    book_id = st.session_state['_book_id']
+    # Capture the dict object directly. _worker writes into it without touching
+    # st.session_state. If the book is reloaded, _load_book replaces
+    # st.session_state['audio_cache'] with a new dict; stale workers then write
+    # into the orphaned old dict — harmless, and the temp file is a minor leak.
+    audio_cache = st.session_state['audio_cache']
 
     def _worker():
         audio_bytes = tts.generate_audio(pages[page_idx], api_key=api_key, lang=lang, speed=speed)
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
         tmp.write(audio_bytes)
         tmp.close()
-        # Only commit if the book hasn't been reloaded since this thread started
-        if st.session_state.get('_book_id') == book_id:
-            st.session_state['audio_cache'][page_idx] = tmp.name
-        else:
-            os.unlink(tmp.name)
+        audio_cache[page_idx] = tmp.name  # dict write is thread-safe in CPython (GIL)
 
     t = threading.Thread(target=_worker, daemon=True)
     st.session_state['prefetch_thread'] = t
