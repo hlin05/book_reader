@@ -73,7 +73,7 @@ def test_parse_pdf_chinese_uses_char_limit_not_word_limit():
     """
     # ~600-char page; split()-words ≈ 1 (no spaces in Chinese).
     # Word-based limit of 500 would merge all 3 pages into 1 (3 words << 500).
-    # Char-based limit of 1200 should flush after 2 pages (600+600=1200) → 2 app pages.
+    # Char-based limit of 600 should flush after each page (600+600=1200 > 600) → 3 app pages.
     zh_page = "这是一段中文测试文本。" * 60  # ~600 chars, 1 split()-word
     pdf = _make_pdf([zh_page, zh_page, zh_page])
     pages = parse_pdf(pdf, lang='zh')
