@@ -1,8 +1,8 @@
 import streamlit as st
 from book_parser import parse_text, parse_pdf, fetch_github_files, fetch_github_file, github_url_to_raw
-from audio_manager import ensure_audio, prefetch, is_prefetch_ready, cleanup
+from audio_manager import ensure_audio, prefetch, cleanup
 
-st.set_page_config(page_title="Book Reader", page_icon="📖", layout="wide")
+st.set_page_config(page_title="Book Reader", page_icon="📖", layout="centered")
 
 
 def _init():
@@ -17,6 +17,7 @@ def _init():
         '_book_id': 0,
         'bookmarks': [],
         'advance_mode': 'manual',
+        '_auto_play_page': -1,
         'lang': 'en',
         'speed': 1.0,
     }
@@ -45,6 +46,7 @@ def _load_book(pages: list[str]):
     st.session_state.prefetch_thread = None
     st.session_state.prefetch_idx = None
     st.session_state.bookmarks = []
+    st.session_state._auto_play_page = -1
 
 
 def _jump_to(page_idx: int):
@@ -133,15 +135,6 @@ def _sidebar():
             st.divider()
             st.subheader("Navigation")
 
-            # Advance mode
-            st.session_state.advance_mode = st.radio(
-                "Page advance",
-                options=["manual", "auto"],
-                format_func=lambda x: "Manual (Next button)" if x == "manual" else "Auto-advance",
-                key="advance_mode_radio",
-                index=0 if st.session_state.advance_mode == "manual" else 1,
-            )
-
             # Page jump
             total = len(st.session_state.pages)
             idx = st.session_state.current_page
@@ -200,68 +193,80 @@ def _player():
     idx = st.session_state.current_page
     total = len(pages)
 
-    st.markdown(f"### Page {idx + 1} / {total}")
     st.progress((idx + 1) / total)
+    st.caption(f"Page {idx + 1} of {total}")
 
-    with st.expander("Page text", expanded=True):
+    auto = st.toggle(
+        "Auto-advance",
+        value=(st.session_state.advance_mode == 'auto'),
+        key="advance_toggle",
+    )
+    st.session_state.advance_mode = 'auto' if auto else 'manual'
+
+    with st.expander("Page text", expanded=False):
         st.markdown(pages[idx].replace('\n', '\n\n'))
 
     with st.spinner("Generating audio..."):
         audio_bytes = ensure_audio(idx, pages, lang=st.session_state.lang, speed=st.session_state.speed)
 
     autoplay = st.session_state.advance_mode == 'auto'
+    st.markdown(
+        "<style>audio { width: 100% !important; height: 54px; }</style>",
+        unsafe_allow_html=True,
+    )
     st.audio(audio_bytes, format='audio/mpeg', autoplay=autoplay)
 
-    # Audio-end auto-advance: poll every 1s and check if the audio element has ended
+    col_prev, col_next = st.columns(2)
+    with col_prev:
+        if idx > 0:
+            if st.button("◀ Prev", key="prev_btn", use_container_width=True):
+                cleanup(idx)
+                st.session_state.current_page -= 1
+                st.rerun()
+        else:
+            st.empty()
+    with col_next:
+        if st.session_state.advance_mode == 'manual' and idx + 1 < total:
+            if st.button("Next ▶", key="next_btn", use_container_width=True):
+                cleanup(idx)
+                st.session_state.current_page += 1
+                st.rerun()
+
     if st.session_state.advance_mode == 'auto' and idx + 1 < total:
         from streamlit_autorefresh import st_autorefresh
         from streamlit_js_eval import streamlit_js_eval
-        # Attempt to play the just-rendered audio element; fires within the
-        # user-activation window from the previous page's 'ended' event.
-        streamlit_js_eval(
-            js_expressions="document.querySelector('audio')?.play()",
-            key=f"autoplay_{idx}",
-        )
-        st_autorefresh(interval=1000, key="audio_end_poll")
-        # Selects the first (and only) <audio> element on the page. If a second st.audio()
-        # call is ever added elsewhere, this selector must be made more specific.
+        # Include _book_id in every component key so that loading a new book
+        # produces fresh keys — preventing stale True values from a previous book's
+        # audio_end_{idx} keys from immediately advancing pages in the new book.
+        book_id = st.session_state._book_id
+        # Guard play() — only fires once per page transition
+        if st.session_state._auto_play_page != idx:
+            st.session_state._auto_play_page = idx
+            streamlit_js_eval(
+                js_expressions="window.parent.document.querySelector('audio')?.play()",
+                key=f"autoplay_{book_id}_{idx}",
+            )
+        # count increments once per second (autorefresh tick).
+        # Embedding it in the expression forces streamlit_js_eval to re-evaluate
+        # each second — without a changing string it only evaluates once (on mount).
+        # window.parent.document is required: st.audio() renders in the parent window,
+        # not inside the component's iframe, so plain document.querySelector returns null.
+        count = st_autorefresh(interval=1000, key=f"audio_end_poll_{book_id}")
         audio_ended = streamlit_js_eval(
-            js_expressions="document.querySelector('audio')?.ended === true",
-            key=f"audio_end_{idx}",
+            js_expressions=f"window.parent.document.querySelector('audio')?.ended === true //{count}",
+            key=f"audio_end_{book_id}_{idx}",
         )
         if audio_ended:
             cleanup(idx)
             st.session_state.current_page += 1
             st.rerun()
 
-    # Kick off background prefetch for next page
     if idx + 1 < total:
         prefetch(idx + 1, pages, lang=st.session_state.lang, speed=st.session_state.speed)
 
-    # Show prefetch status
-    if idx + 1 < total:
-        if is_prefetch_ready(idx + 1):
-            st.success("Next page audio: ready ✅")
-        else:
-            st.info("Next page audio: generating... ⏳")
-
-    # Navigation buttons (always show Prev; Next only in manual mode)
-    col1, col2, col3 = st.columns([1, 6, 1])
-    with col1:
-        if idx > 0 and st.button("◀ Prev", key="prev_btn"):
-            cleanup(idx)
-            st.session_state.current_page -= 1
-            st.rerun()
-    with col3:
-        if st.session_state.advance_mode == 'manual' and idx + 1 < total:
-            if st.button("Next ▶", key="next_btn"):
-                cleanup(idx)
-                st.session_state.current_page += 1
-                st.rerun()
-
     if idx + 1 >= total:
         st.balloons()
-        st.success("You've reached the end of the book! 🎉")
+        st.success("You've reached the end of the book!")
 
 
 def main():

@@ -22,7 +22,7 @@ def parse_text(text: str, chars_per_page: int = 1500, words_per_page: int = 1000
     language selector is left on English.
     """
     if lang == 'zh' or _is_chinese(text):
-        return _parse_text_chinese(text, chars_per_page if chars_per_page != 1500 else 1200)
+        return _parse_text_chinese(text, chars_per_page if chars_per_page != 1500 else 600)
     return _parse_text_latin(text, chars_per_page, words_per_page)
 
 
@@ -87,16 +87,23 @@ def parse_pdf(file_bytes: bytes, words_per_page: int = 500, lang: str = 'en') ->
     of word count because Chinese text has no spaces between characters, making split()-based
     word counting wildly underestimate page size (e.g. 800-char page counts as ~1 "word").
     """
-    # Chinese: target 1200 chars/page (matches parse_text's Chinese default).
+    # Chinese: target 600 chars/page (matches parse_text's Chinese default).
     # English: target words_per_page words/page.
-    _zh_chars_limit = 1200
+    _zh_chars_limit = 600
 
     doc = fitz.open(stream=file_bytes, filetype="pdf")
 
-    # Auto-detect Chinese from early pages, matching parse_text / tts behaviour
+    # Auto-detect Chinese from the first non-blank pages (skip cover/image-only pages).
+    # Scan up to 20 pages collecting text until we have 2000 chars — enough for _is_chinese.
     if lang != 'zh':
-        sample = ''.join(p.get_text() for p in doc[:3])
-        if _is_chinese(sample):
+        sample_parts: list[str] = []
+        for p in doc[:20]:
+            t = p.get_text().strip()
+            if t:
+                sample_parts.append(t)
+            if sum(len(s) for s in sample_parts) >= 2000:
+                break
+        if _is_chinese(''.join(sample_parts)):
             lang = 'zh'
 
     pages: list[str] = []
@@ -162,7 +169,7 @@ def _parse_github_url(repo_url: str) -> tuple[str, str, str | None, str | None]:
     )
     if not m:
         raise ValueError(f"Not a valid GitHub URL: {repo_url!r}")
-    owner, repo, kind, branch, path = m.group(1), m.group(2), m.group(3), m.group(4), m.group(5)
+    owner, repo, branch, path = m.group(1), m.group(2), m.group(4), m.group(5)
     if path:
         path = unquote(path)
     return owner, repo, branch, path
