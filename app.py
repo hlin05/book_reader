@@ -27,6 +27,9 @@ def _init():
 
 def _on_speed_change():
     """Clear audio cache when speed changes so next render regenerates at new speed."""
+    # Cancel any in-flight prefetch so it doesn't overwrite the cache with old-speed audio
+    st.session_state.get('_prefetch_cancel_token', [False])[0] = True
+    st.session_state['_prefetch_cancel_token'] = [False]
     for idx in list(st.session_state.audio_cache.keys()):
         cleanup(idx)
     st.session_state.prefetch_thread = None
@@ -37,6 +40,8 @@ def _load_book(pages: list[str]):
     """Reset all state and load a new book."""
     # Increment _book_id first so any in-flight prefetch thread discards its result
     st.session_state['_book_id'] = st.session_state.get('_book_id', 0) + 1
+    # Cancel in-flight prefetch so it won't write temp files into the old cache
+    st.session_state.get('_prefetch_cancel_token', [False])[0] = True
     for idx in list(st.session_state.audio_cache.keys()):
         cleanup(idx)
     st.session_state.pages = pages
@@ -45,6 +50,7 @@ def _load_book(pages: list[str]):
     st.session_state.audio_cache = {}
     st.session_state.prefetch_thread = None
     st.session_state.prefetch_idx = None
+    st.session_state._prefetch_cancel_token = [False]
     st.session_state.bookmarks = []
     st.session_state._auto_play_page = -1
 
@@ -256,7 +262,7 @@ def _player():
             js_expressions=f"window.parent.document.querySelector('audio')?.ended === true //{count}",
             key=f"audio_end_{book_id}_{idx}",
         )
-        if audio_ended:
+        if audio_ended is True:
             cleanup(idx)
             st.session_state.current_page += 1
             st.rerun()
