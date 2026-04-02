@@ -64,7 +64,9 @@ def _edge_tts(text: str, lang: str = 'zh', speed: float = 1.0) -> bytes:
     last_err: Exception | None = None
     for attempt in range(3):
         try:
-            return asyncio.run(_run())
+            return asyncio.run(asyncio.wait_for(_run(), timeout=30))
+        except asyncio.TimeoutError as e:
+            raise RuntimeError("edge-tts timed out after 30 seconds") from e
         except edge_tts.exceptions.NoAudioReceived as e:
             last_err = e
             if attempt < 2:
@@ -91,7 +93,7 @@ def _openai_tts(text: str, api_key: str, speed: float = 1.0) -> bytes:
     from openai import OpenAI
     # OpenAI TTS API limit is 4096 characters; truncate to avoid a 400 error.
     truncated = text[:_OPENAI_MAX_CHARS]
-    response = OpenAI(api_key=api_key).audio.speech.create(
+    response = OpenAI(api_key=api_key, timeout=30.0).audio.speech.create(
         model="tts-1",
         voice="alloy",
         input=truncated,
